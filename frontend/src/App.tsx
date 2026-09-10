@@ -147,6 +147,26 @@ function App() {
     );
   };
 
+  const deleteSelectedNode = () => {
+    if (!selectedNodeId) return;
+
+    setNodes((currentNodes) =>
+      currentNodes.filter(
+        (node) => node.id !== selectedNodeId
+      )
+    );
+
+    setEdges((currentEdges) =>
+      currentEdges.filter(
+        (edge) =>
+          edge.source !== selectedNodeId &&
+          edge.target !== selectedNodeId
+      )
+    );
+
+    setSelectedNodeId(null);
+  };
+
   const runWorkflow = async () => {
     try {
       setRunStatus("Running...");
@@ -297,17 +317,84 @@ function App() {
         width: "100vw",
         height: "100vh",
         display: "flex",
+        background: "#f8fafc",
       }}
     >
       <aside
         style={{
-          width: 300,
-          padding: 20,
-          borderRight: "1px solid #ddd",
+          width: 340,
+          padding: 24,
+          borderRight: "1px solid #e2e8f0",
+          background: "#ffffff",
+          overflowY: "auto",
+          boxShadow: "4px 0 20px rgba(15, 23, 42, 0.04)",
+          zIndex: 10,
         }}
-      >
-        <button onClick={addNode}>
-          + Add Node
+      ><div style={{ marginBottom: 28 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                background: "#2563eb",
+                color: "white",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontWeight: 800,
+                fontSize: 18,
+              }}
+            >
+              AI
+            </div>
+
+            <div>
+              <h1
+                style={{
+                  margin: 0,
+                  fontSize: 19,
+                  fontWeight: 750,
+                  color: "#0f172a",
+                }}
+              >
+                AI Workflow Builder
+              </h1>
+
+              <p
+                style={{
+                  margin: "3px 0 0",
+                  fontSize: 12,
+                  color: "#64748b",
+                }}
+              >
+                Visual decision automation
+              </p>
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={addNode}
+          style={{
+            width: "100%",
+            padding: "11px 14px",
+            borderRadius: 10,
+            border: "none",
+            background: "#0f172a",
+            color: "white",
+            fontWeight: 650,
+            fontSize: 13,
+            cursor: "pointer",
+            boxShadow: "0 4px 10px rgba(15, 23, 42, 0.12)",
+          }}
+        >
+          + Add Decision Node
         </button>
         <div style={{ marginTop: 30 }}>
           <h3>Workflow Input</h3>
@@ -320,26 +407,74 @@ function App() {
             placeholder="Example: I cannot login to my account"
             style={{
               width: "100%",
-              minHeight: 100,
+              minHeight: 110,
               marginTop: 10,
+              padding: 12,
+              borderRadius: 10,
+              border: "1px solid #cbd5e1",
+              background: "#f8fafc",
+              resize: "vertical",
+              fontSize: 13,
+              outline: "none",
+              boxSizing: "border-box",
             }}
           />
 
           <button
             onClick={runWorkflow}
+            disabled={runStatus === "Running..."}
             style={{
-              marginTop: 10,
+              marginTop: 12,
               width: "100%",
-              padding: 10,
+              padding: 11,
+              borderRadius: 10,
+              border: "none",
+              background:
+                runStatus === "Running..."
+                  ? "#94a3b8"
+                  : "#2563eb",
+              color: "white",
+              fontWeight: 650,
+              cursor:
+                runStatus === "Running..."
+                  ? "not-allowed"
+                  : "pointer",
+              boxShadow:
+                runStatus === "Running..."
+                  ? "none"
+                  : "0 4px 12px rgba(37, 99, 235, 0.22)",
             }}
           >
-            Run Workflow
+            {runStatus === "Running..."
+              ? "Running workflow..."
+              : "▶ Run Workflow"}
           </button>
 
           {runStatus && (
-            <p style={{ marginTop: 10 }}>
+            <div
+              style={{
+                marginTop: 12,
+                padding: "8px 10px",
+                borderRadius: 8,
+                background:
+                  runStatus.includes("Completed")
+                    ? "#ecfdf5"
+                    : runStatus.includes("❌")
+                      ? "#fef2f2"
+                      : "#eff6ff",
+                color:
+                  runStatus.includes("Completed")
+                    ? "#15803d"
+                    : runStatus.includes("❌")
+                      ? "#dc2626"
+                      : "#1d4ed8",
+                fontSize: 12,
+                fontWeight: 600,
+                textAlign: "center",
+              }}
+            >
               {runStatus}
-            </p>
+            </div>
           )}
           {executionLogs.length > 0 && (
             <div style={{ marginTop: 30 }}>
@@ -350,32 +485,55 @@ function App() {
                   key={`${log.node_id}-${index}`}
                   style={{
                     marginTop: 10,
-                    padding: 10,
-                    border: "1px solid #ddd",
-                    borderRadius: 8,
+                    padding: 12,
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 10,
+                    background: "white",
+                    boxShadow: "0 2px 8px rgba(15, 23, 42, 0.04)",
                   }}
                 >
                   <div
                     style={{
-                      fontSize: 12,
-                      color: "#71717a",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "#94a3b8",
+                      textTransform: "uppercase",
+                      letterSpacing: 1,
                     }}
                   >
                     Step {index + 1}
                   </div>
 
-                  <div style={{ marginTop: 5 }}>
+                  <div
+                    style={{
+                      marginTop: 6,
+                      color: "#334155",
+                      fontSize: 13,
+                    }}
+                  >
                     {log.prompt}
                   </div>
 
-                  <strong
+                  <div
                     style={{
-                      display: "block",
-                      marginTop: 5,
+                      display: "inline-block",
+                      marginTop: 8,
+                      padding: "3px 8px",
+                      borderRadius: 20,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      background:
+                        log.decision === "YES"
+                          ? "#dcfce7"
+                          : "#fee2e2",
+                      color:
+                        log.decision === "YES"
+                          ? "#15803d"
+                          : "#b91c1c",
                     }}
                   >
-                    → {log.decision}
-                  </strong>
+                    {log.decision}
+                  </div>
                 </div>
               ))}
             </div>
@@ -384,7 +542,40 @@ function App() {
 
         {selectedNode && (
           <div style={{ marginTop: 30 }}>
-            <h3>Edit Prompt</h3>
+            <h3
+              style={{
+                marginBottom: 4,
+                fontSize: 16,
+              }}
+            >
+              Edit Prompt
+            </h3>
+            <button
+              onClick={deleteSelectedNode}
+              style={{
+                width: "100%",
+                marginTop: 12,
+                padding: "10px 14px",
+                borderRadius: 8,
+                border: "1px solid #fecaca",
+                background: "#fef2f2",
+                color: "#dc2626",
+                fontWeight: 600,
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              Delete Node
+            </button>
+            <p
+              style={{
+                fontSize: 12,
+                color: "#71717a",
+                marginTop: 0,
+              }}
+            >
+              The AI will answer this question with YES or NO.
+            </p>
 
             <textarea
               value={selectedNode.data.prompt}
@@ -401,7 +592,12 @@ function App() {
         )}
       </aside>
 
-      <main style={{ flex: 1 }}>
+      <main
+        style={{
+          flex: 1,
+          background: "#ffffff",
+        }}
+      >
         <ReactFlow
           nodes={visualNodes}
           edges={edges}

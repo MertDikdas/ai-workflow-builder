@@ -18,27 +18,44 @@ export type DecisionNodeType = Node<
 
 export default function DecisionNode({
     data,
+    selected,
 }: NodeProps<DecisionNodeType>) {
     const isRunning = data.executionStatus === "running";
     const isCompleted = data.executionStatus === "completed";
     return (
+
         <div
             style={{
-                width: 260,
-                padding: 16,
+                width: 270,
+                padding: 18,
+
                 background: isRunning
-                    ? "#fefce8"
+                    ? "#fffbeb"
                     : isCompleted
                         ? "#f0fdf4"
-                        : "white",
+                        : "#ffffff",
 
                 border: isRunning
-                    ? "2px solid #eab308"
+                    ? "1.5px solid #f59e0b"
                     : isCompleted
-                        ? "2px solid #22c55e"
-                        : "2px solid #27272a",
+                        ? "1.5px solid #22c55e"
+                        : "1.5px solid #cbd5e1",
 
-                borderRadius: 10,
+                borderRadius: 14,
+
+                boxShadow: isRunning
+                    ? "0 8px 24px rgba(245, 158, 11, 0.15)"
+                    : isCompleted
+                        ? "0 8px 24px rgba(34, 197, 94, 0.12)"
+                        : "0 6px 18px rgba(15, 23, 42, 0.08)",
+                outline: selected
+                    ? "3px solid rgba(37, 99, 235, 0.35)"
+                    : "none",
+
+                outlineOffset: 3,
+
+
+                transition: "all 0.25s ease",
             }}
         >
             <Handle
@@ -48,10 +65,11 @@ export default function DecisionNode({
 
             <div
                 style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    marginBottom: 8,
-                    color: "#71717a",
+                    fontSize: 10,
+                    fontWeight: 800,
+                    marginBottom: 10,
+                    color: "#64748b",
+                    letterSpacing: "1.2px",
                 }}
             >
                 AI DECISION
