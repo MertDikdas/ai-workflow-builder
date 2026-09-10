@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -35,16 +35,53 @@ const initialNodes: DecisionNodeType[] = [
 
 const initialEdges: Edge[] = [];
 
+const STORAGE_KEY = "ai-workflow";
+
+function loadWorkflow() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+
+    if (!saved) {
+      return {
+        nodes: initialNodes,
+        edges: initialEdges,
+      };
+    }
+
+    const parsed = JSON.parse(saved);
+
+    return {
+      nodes: parsed.nodes ?? initialNodes,
+      edges: parsed.edges ?? initialEdges,
+    };
+  } catch {
+    return {
+      nodes: initialNodes,
+      edges: initialEdges,
+    };
+  }
+}
+
 function App() {
+  const savedWorkflow = useMemo(() => loadWorkflow(), []);
+
   const [nodes, setNodes, onNodesChange] =
-    useNodesState<DecisionNodeType>(initialNodes);
+    useNodesState<DecisionNodeType>(savedWorkflow.nodes);
 
   const [edges, setEdges, onEdgesChange] =
-    useEdgesState<Edge>(initialEdges);
+    useEdgesState<Edge>(savedWorkflow.edges);
 
   const [selectedNodeId, setSelectedNodeId] =
     useState<string | null>(null);
-
+  useEffect(() => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        nodes,
+        edges,
+      })
+    );
+  }, [nodes, edges]);
   const onConnect = useCallback(
     (connection: Connection) => {
       setEdges((currentEdges) =>
