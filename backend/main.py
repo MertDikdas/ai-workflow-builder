@@ -1,7 +1,7 @@
 import logging
 import os
 from typing import Any
-
+from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -56,11 +56,51 @@ class WorkflowRunRequest(BaseModel):
 
 @app.post("/workflow/run")
 async def run_workflow(payload: WorkflowRunRequest):
+
+    if not payload.input.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Workflow input cannot be empty"
+        )
+
+    if not payload.nodes:
+        raise HTTPException(
+            status_code=400,
+            detail="Workflow must contain at least one node"
+        )
+
+    for node in payload.nodes:
+        prompt = node.get("data", {}).get("prompt", "")
+
+        if not prompt.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="All nodes must have a prompt"
+            )
+
+    incoming_targets = {
+        edge.get("target")
+        for edge in payload.edges
+    }
+
+    start_nodes = [
+        node
+        for node in payload.nodes
+        if node.get("id") not in incoming_targets
+    ]
+
+    if len(start_nodes) != 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Workflow must have exactly one start node"
+        )
+
     run_id = str(uuid4())
 
     execution_runs[run_id] = {
         "status": "queued",
         "execution_order": [],
+        "error": None,
     }
 
     event_data = payload.model_dump()
@@ -107,132 +147,137 @@ async def execute_workflow(ctx: inngest.Context):
     if not nodes:
         raise ValueError("Workflow has no nodes")
 
-    # Başlangıç node'unu bul:
-    # Kendisine gelen edge olmayan node.
-    incoming_targets = {
-        edge.get("target")
-        for edge in edges
-    }
+    try:
+        incoming_targets = {
+            edge.get("target")
+            for edge in edges
+        }
 
-    start_nodes = [
-        node
-        for node in nodes
-        if node.get("id") not in incoming_targets
-    ]
+        start_nodes = [
+            node
+            for node in nodes
+            if node.get("id") not in incoming_targets
+        ]
 
-    if len(start_nodes) != 1:
-        raise ValueError(
-            "Workflow must have exactly one start node"
-        )
-
-    current_node = start_nodes[0]
-    visited = set()
-    execution_order = []
-
-    while current_node:
-
-        node_id = current_node["id"]
-
-        if node_id in visited:
+        if len(start_nodes) != 1:
             raise ValueError(
-                f"Cycle detected at node {node_id}"
+                "Workflow must have exactly one start node"
             )
 
-        visited.add(node_id)
+        current_node = start_nodes[0]
+        visited = set()
+        execution_order = []
 
-        prompt = current_node.get(
-            "data",
-            {}
-        ).get("prompt", "")
+        while current_node:
 
-        async def run_ai_node():
-            response = await openai_client.responses.create(
-                model=os.getenv(
-                    "OPENAI_MODEL",
-                    "gpt-5.5"
-                ),
-                instructions=(
-                    "You are a binary decision engine. "
-                    "Return exactly YES or NO. "
-                    "Do not explain your answer."
-                ),
-                input=(
-                    f"User input:\n{workflow_input}\n\n"
-                    f"Decision question:\n{prompt}"
-                ),
-            )
+            node_id = current_node["id"]
 
-            decision = (
-                response.output_text
-                .strip()
-                .upper()
-            )
-
-            if decision not in {"YES", "NO"}:
+            if node_id in visited:
                 raise ValueError(
-                    f"Invalid AI response: {decision}"
+                    f"Cycle detected at node {node_id}"
                 )
 
-            # BUNU STEP'İN İÇİNE ALDIK
-            if run_id:
-                execution_runs[run_id]["execution_order"].append({
-                    "node_id": node_id,
-                    "prompt": prompt,
-                    "decision": decision,
-                })
+            visited.add(node_id)
 
-            return decision
+            prompt = current_node.get(
+                "data",
+                {}
+            ).get("prompt", "")
 
-        decision = await ctx.step.run(
-            f"node-{node_id}",
-            run_ai_node,
-        )
-
-        execution_order.append({
-            "node_id": node_id,
-            "prompt": prompt,
-            "decision": decision,
-        })
-
-        next_edge = next(
-            (
-                edge
-                for edge in edges
-                if edge.get("source") == node_id
-                and (
-                    edge.get("sourceHandle") == decision
-                    or edge.get("label") == decision
+            async def run_ai_node():
+                response = await openai_client.responses.create(
+                    model=os.getenv(
+                        "OPENAI_MODEL",
+                        "gpt-5.5"
+                    ),
+                    instructions=(
+                        "You are a binary decision engine. "
+                        "Return exactly YES or NO. "
+                        "Do not explain your answer."
+                    ),
+                    input=(
+                        f"User input:\n{workflow_input}\n\n"
+                        f"Decision question:\n{prompt}"
+                    ),
                 )
-            ),
-            None,
-        )
 
-        if not next_edge:
-            break
+                decision = (
+                    response.output_text
+                    .strip()
+                    .upper()
+                )
 
-        next_node_id = next_edge.get("target")
+                if decision not in {"YES", "NO"}:
+                    raise ValueError(
+                        f"Invalid AI response: {decision}"
+                    )
 
-        current_node = next(
-            (
-                node
-                for node in nodes
-                if node.get("id") == next_node_id
-            ),
-            None,
-        )
+                # BUNU STEP'İN İÇİNE ALDIK
+                if run_id:
+                    execution_runs[run_id]["execution_order"].append({
+                        "node_id": node_id,
+                        "prompt": prompt,
+                        "decision": decision,
+                    })
 
-        if current_node is None:
-            raise ValueError(
-                f"Target node {next_node_id} not found"
+                return decision
+
+            decision = await ctx.step.run(
+                f"node-{node_id}",
+                run_ai_node,
             )
 
-    if run_id:
-        execution_runs[run_id]["status"] = "completed"
+            execution_order.append({
+                "node_id": node_id,
+                "prompt": prompt,
+                "decision": decision,
+            })
 
-    return {
-        "status": "completed",
-        "execution_order": execution_order,
-    }
+            next_edge = next(
+                (
+                    edge
+                    for edge in edges
+                    if edge.get("source") == node_id
+                    and (
+                        edge.get("sourceHandle") == decision
+                        or edge.get("label") == decision
+                    )
+                ),
+                None,
+            )
+
+            if not next_edge:
+                break
+
+            next_node_id = next_edge.get("target")
+
+            current_node = next(
+                (
+                    node
+                    for node in nodes
+                    if node.get("id") == next_node_id
+                ),
+                None,
+            )
+
+            if current_node is None:
+                raise ValueError(
+                    f"Target node {next_node_id} not found"
+                )
+
+        if run_id:
+            execution_runs[run_id]["status"] = "completed"
+
+        return {
+            "status": "completed",
+            "execution_order": execution_order,
+        }
+    except Exception as error:
+        if run_id:
+            execution_runs[run_id]["status"] = "failed"
+            execution_runs[run_id]["error"] = str(error)
+
+        raise
 
 
 inngest.fast_api.serve(

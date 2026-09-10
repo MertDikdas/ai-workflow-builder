@@ -168,7 +168,11 @@ function App() {
       );
 
       if (!response.ok) {
-        throw new Error("Workflow could not be started");
+        const errorData = await response.json();
+
+        throw new Error(
+          errorData.detail ?? "Workflow could not be started"
+        );
       }
 
       const result = await response.json();
@@ -188,6 +192,12 @@ function App() {
           setRunStatus("Completed ✅");
           return;
         }
+        if (run.status === "failed") {
+          setRunStatus(
+            `❌ ${run.error ?? "Workflow execution failed"}`
+          );
+          return;
+        }
 
         if (run.status === "not_found") {
           setRunStatus("Run not found ❌");
@@ -200,7 +210,12 @@ function App() {
       pollRun();
     } catch (error) {
       console.error(error);
-      setRunStatus("Workflow failed ❌");
+
+      if (error instanceof Error) {
+        setRunStatus(`❌ ${error.message}`);
+      } else {
+        setRunStatus("Workflow failed ❌");
+      }
     }
   };
   const getActiveNodeId = () => {
