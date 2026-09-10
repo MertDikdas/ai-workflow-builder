@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from openai import AsyncOpenAI
 
 import inngest
 import inngest.fast_api
@@ -43,6 +44,9 @@ inngest_client = inngest.Inngest(
     ),
 )
 
+openai_client = AsyncOpenAI(
+    api_key=os.getenv("OPENAI_API_KEY")
+)
 
 class WorkflowRunRequest(BaseModel):
     input: str
@@ -73,29 +77,129 @@ async def run_workflow(payload: WorkflowRunRequest):
     ),
 )
 async def execute_workflow(ctx: inngest.Context):
-
     data = ctx.event.data
 
-    async def receive_workflow():
-        print("WORKFLOW GELDI")
-        print("Input:", data.get("input"))
-        print("Node count:", len(data.get("nodes", [])))
-        print("Edge count:", len(data.get("edges", [])))
+    nodes = data.get("nodes", [])
+    edges = data.get("edges", [])
+    workflow_input = data.get("input", "")
 
-        return {
-            "input": data.get("input"),
-            "node_count": len(data.get("nodes", [])),
-            "edge_count": len(data.get("edges", [])),
-        }
+    if not nodes:
+        raise ValueError("Workflow has no nodes")
 
-    result = await ctx.step.run(
-        "receive-workflow",
-        receive_workflow,
-    )
+    # Başlangıç node'unu bul:
+    # Kendisine gelen edge olmayan node.
+    incoming_targets = {
+        edge.get("target")
+        for edge in edges
+    }
+
+    start_nodes = [
+        node
+        for node in nodes
+        if node.get("id") not in incoming_targets
+    ]
+
+    if len(start_nodes) != 1:
+        raise ValueError(
+            "Workflow must have exactly one start node"
+        )
+
+    current_node = start_nodes[0]
+    visited = set()
+    execution_order = []
+
+    while current_node:
+
+        node_id = current_node["id"]
+
+        if node_id in visited:
+            raise ValueError(
+                f"Cycle detected at node {node_id}"
+            )
+
+        visited.add(node_id)
+
+        prompt = current_node.get(
+            "data",
+            {}
+        ).get("prompt", "")
+
+        async def run_ai_node():
+            response = await openai_client.responses.create(
+                model=os.getenv(
+                    "OPENAI_MODEL",
+                    "gpt-5.5-mini"
+                ),
+                instructions=(
+                    "You are a binary decision engine. "
+                    "Return exactly YES or NO. "
+                    "Do not explain."
+                ),
+                input=(
+                    f"User input:\n{workflow_input}\n\n"
+                    f"Decision question:\n{prompt}"
+                ),
+            )
+
+            decision = (
+                response.output_text
+                .strip()
+                .upper()
+            )
+
+            if decision not in {"YES", "NO"}:
+                raise ValueError(
+                    f"Invalid AI response: {decision}"
+                )
+
+            return decision
+
+        decision = await ctx.step.run(
+            f"node-{node_id}",
+            run_ai_node,
+        )
+
+        execution_order.append({
+            "node_id": node_id,
+            "prompt": prompt,
+            "decision": decision,
+        })
+
+        next_edge = next(
+            (
+                edge
+                for edge in edges
+                if edge.get("source") == node_id
+                and (
+                    edge.get("sourceHandle") == decision
+                    or edge.get("label") == decision
+                )
+            ),
+            None,
+        )
+
+        if not next_edge:
+            break
+
+        next_node_id = next_edge.get("target")
+
+        current_node = next(
+            (
+                node
+                for node in nodes
+                if node.get("id") == next_node_id
+            ),
+            None,
+        )
+
+        if current_node is None:
+            raise ValueError(
+                f"Target node {next_node_id} not found"
+            )
 
     return {
-        "status": "received",
-        "workflow": result,
+        "status": "completed",
+        "execution_order": execution_order,
     }
 
 
