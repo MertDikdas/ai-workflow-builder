@@ -71,6 +71,9 @@ function App() {
   const [edges, setEdges, onEdgesChange] =
     useEdgesState<Edge>(savedWorkflow.edges);
 
+  const [workflowInput, setWorkflowInput] = useState("");
+  const [runStatus, setRunStatus] = useState("");
+
   const [selectedNodeId, setSelectedNodeId] =
     useState<string | null>(null);
   useEffect(() => {
@@ -138,6 +141,40 @@ function App() {
     );
   };
 
+  const runWorkflow = async () => {
+    try {
+      setRunStatus("Running...");
+
+      const response = await fetch(
+        "http://localhost:8000/workflow/run",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            input: workflowInput,
+            nodes,
+            edges,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Workflow could not be started");
+      }
+
+      const result = await response.json();
+
+      console.log(result);
+
+      setRunStatus("Workflow sent to Inngest ✅");
+    } catch (error) {
+      console.error(error);
+      setRunStatus("Workflow failed ❌");
+    }
+  };
+
   return (
     <div
       style={{
@@ -156,6 +193,39 @@ function App() {
         <button onClick={addNode}>
           + Add Node
         </button>
+        <div style={{ marginTop: 30 }}>
+          <h3>Workflow Input</h3>
+
+          <textarea
+            value={workflowInput}
+            onChange={(event) =>
+              setWorkflowInput(event.target.value)
+            }
+            placeholder="Example: I cannot login to my account"
+            style={{
+              width: "100%",
+              minHeight: 100,
+              marginTop: 10,
+            }}
+          />
+
+          <button
+            onClick={runWorkflow}
+            style={{
+              marginTop: 10,
+              width: "100%",
+              padding: 10,
+            }}
+          >
+            Run Workflow
+          </button>
+
+          {runStatus && (
+            <p style={{ marginTop: 10 }}>
+              {runStatus}
+            </p>
+          )}
+        </div>
 
         {selectedNode && (
           <div style={{ marginTop: 30 }}>
