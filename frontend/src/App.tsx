@@ -203,7 +203,79 @@ function App() {
       setRunStatus("Workflow failed ❌");
     }
   };
+  const getActiveNodeId = () => {
+    if (runStatus !== "Running...") {
+      return null;
+    }
 
+    // Henüz hiçbir node tamamlanmadıysa
+    // başlangıç node'unu bul
+    if (executionLogs.length === 0) {
+      const targets = new Set(
+        edges.map((edge) => edge.target)
+      );
+
+      const startNode = nodes.find(
+        (node) => !targets.has(node.id)
+      );
+
+      return startNode?.id ?? null;
+    }
+
+    // Son çalışan node
+    const lastLog =
+      executionLogs[executionLogs.length - 1];
+
+    // AI'nin verdiği YES/NO sonucuna göre
+    // sıradaki edge'i bul
+    const nextEdge = edges.find(
+      (edge) =>
+        edge.source === lastLog.node_id &&
+        (
+          edge.sourceHandle === lastLog.decision ||
+          edge.label === lastLog.decision
+        )
+    );
+
+    return nextEdge?.target ?? null;
+  };
+
+  const activeNodeId = getActiveNodeId();
+
+  const visualNodes = nodes.map((node) => {
+    const log = executionLogs.find(
+      (item) => item.node_id === node.id
+    );
+
+    if (log) {
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          executionStatus: "completed" as const,
+          decision: log.decision,
+        },
+      };
+    }
+
+    if (node.id === activeNodeId) {
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          executionStatus: "running" as const,
+        },
+      };
+    }
+
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        executionStatus: "idle" as const,
+      },
+    };
+  });
   return (
     <div
       style={{
@@ -316,7 +388,7 @@ function App() {
 
       <main style={{ flex: 1 }}>
         <ReactFlow
-          nodes={nodes}
+          nodes={visualNodes}
           edges={edges}
           nodeTypes={nodeTypes}
           onNodesChange={onNodesChange}
