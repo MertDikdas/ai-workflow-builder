@@ -33,6 +33,12 @@ const initialNodes: DecisionNodeType[] = [
   },
 ];
 
+type ExecutionLog = {
+  node_id: string;
+  prompt: string;
+  decision: "YES" | "NO";
+};
+
 const initialEdges: Edge[] = [];
 
 const STORAGE_KEY = "ai-workflow";
@@ -64,7 +70,7 @@ function loadWorkflow() {
 
 function App() {
   const savedWorkflow = useMemo(() => loadWorkflow(), []);
-
+  const [executionLogs, setExecutionLogs] = useState<ExecutionLog[]>([]);
   const [nodes, setNodes, onNodesChange] =
     useNodesState<DecisionNodeType>(savedWorkflow.nodes);
 
@@ -144,6 +150,7 @@ function App() {
   const runWorkflow = async () => {
     try {
       setRunStatus("Running...");
+      setExecutionLogs([]);
 
       const response = await fetch(
         "http://localhost:8000/workflow/run",
@@ -166,9 +173,31 @@ function App() {
 
       const result = await response.json();
 
-      console.log(result);
+      const runId = result.run_id;
 
-      setRunStatus("Workflow sent to Inngest ✅");
+      const pollRun = async () => {
+        const statusResponse = await fetch(
+          `http://localhost:8000/workflow/run/${runId}`
+        );
+
+        const run = await statusResponse.json();
+
+        setExecutionLogs(run.execution_order ?? []);
+
+        if (run.status === "completed") {
+          setRunStatus("Completed ✅");
+          return;
+        }
+
+        if (run.status === "not_found") {
+          setRunStatus("Run not found ❌");
+          return;
+        }
+
+        setTimeout(pollRun, 500);
+      };
+
+      pollRun();
     } catch (error) {
       console.error(error);
       setRunStatus("Workflow failed ❌");
@@ -224,6 +253,45 @@ function App() {
             <p style={{ marginTop: 10 }}>
               {runStatus}
             </p>
+          )}
+          {executionLogs.length > 0 && (
+            <div style={{ marginTop: 30 }}>
+              <h3>Execution Logs</h3>
+
+              {executionLogs.map((log, index) => (
+                <div
+                  key={`${log.node_id}-${index}`}
+                  style={{
+                    marginTop: 10,
+                    padding: 10,
+                    border: "1px solid #ddd",
+                    borderRadius: 8,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "#71717a",
+                    }}
+                  >
+                    Step {index + 1}
+                  </div>
+
+                  <div style={{ marginTop: 5 }}>
+                    {log.prompt}
+                  </div>
+
+                  <strong
+                    style={{
+                      display: "block",
+                      marginTop: 5,
+                    }}
+                  >
+                    → {log.decision}
+                  </strong>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 

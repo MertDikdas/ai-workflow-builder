@@ -10,12 +10,12 @@ from openai import AsyncOpenAI
 
 import inngest
 import inngest.fast_api
-
+from uuid import uuid4
 
 load_dotenv()
 
 app = FastAPI()
-
+execution_runs = {}
 
 # React localhost:5173 -> FastAPI localhost:8000 konuşabilsin
 app.add_middleware(
@@ -56,19 +56,38 @@ class WorkflowRunRequest(BaseModel):
 
 @app.post("/workflow/run")
 async def run_workflow(payload: WorkflowRunRequest):
+    run_id = str(uuid4())
 
-    event_ids = await inngest_client.send(
+    execution_runs[run_id] = {
+        "status": "queued",
+        "execution_order": [],
+    }
+
+    event_data = payload.model_dump()
+    event_data["run_id"] = run_id
+
+    await inngest_client.send(
         inngest.Event(
             name="workflow/run",
-            data=payload.model_dump(),
+            data=event_data,
         )
     )
 
     return {
         "status": "queued",
-        "event_ids": event_ids,
+        "run_id": run_id,
     }
 
+@app.get("/workflow/run/{run_id}")
+async def get_workflow_run(run_id: str):
+    result = execution_runs.get(run_id)
+
+    if result is None:
+        return {
+            "status": "not_found"
+        }
+
+    return result
 
 @inngest_client.create_function(
     fn_id="execute_workflow",
@@ -78,10 +97,12 @@ async def run_workflow(payload: WorkflowRunRequest):
 )
 async def execute_workflow(ctx: inngest.Context):
     data = ctx.event.data
-
+    run_id = data.get("run_id")
     nodes = data.get("nodes", [])
     edges = data.get("edges", [])
     workflow_input = data.get("input", "")
+    if run_id:
+        execution_runs[run_id]["status"] = "running"
 
     if not nodes:
         raise ValueError("Workflow has no nodes")
@@ -128,12 +149,12 @@ async def execute_workflow(ctx: inngest.Context):
             response = await openai_client.responses.create(
                 model=os.getenv(
                     "OPENAI_MODEL",
-                    "gpt-5.5-mini"
+                    "gpt-5.5"
                 ),
                 instructions=(
                     "You are a binary decision engine. "
                     "Return exactly YES or NO. "
-                    "Do not explain."
+                    "Do not explain your answer."
                 ),
                 input=(
                     f"User input:\n{workflow_input}\n\n"
@@ -151,6 +172,14 @@ async def execute_workflow(ctx: inngest.Context):
                 raise ValueError(
                     f"Invalid AI response: {decision}"
                 )
+
+            # BUNU STEP'İN İÇİNE ALDIK
+            if run_id:
+                execution_runs[run_id]["execution_order"].append({
+                    "node_id": node_id,
+                    "prompt": prompt,
+                    "decision": decision,
+                })
 
             return decision
 
@@ -196,6 +225,9 @@ async def execute_workflow(ctx: inngest.Context):
             raise ValueError(
                 f"Target node {next_node_id} not found"
             )
+
+    if run_id:
+        execution_runs[run_id]["status"] = "completed"
 
     return {
         "status": "completed",
